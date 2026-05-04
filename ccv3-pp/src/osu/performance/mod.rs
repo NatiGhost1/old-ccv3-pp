@@ -1046,74 +1046,122 @@ impl OsuPerformanceInner<'_> {
         }
     }
 
-    // * Combo Consistency Multiplier
-    fn apply_cc_v3_multiplier(&self) -> f64 {
-        let misses = self.effective_miss_count;
-        if misses <= 0.0 {
+    // ── CC V3 helper methods ────────────────────────────────────────
+
+    // TODO: Use Claude to identify and fix any logic errors or type mismatches 
+    // arising from the direct port of the new continuous miss rework from the 
+    // rosu-based ccv3, ensuring full compatibility with the original akat-based core.
+
+    /// CC V3 combo-ratio tax. Light tax based on achieved combo ratio.
+    /// FC passes through untouched.
+    fn combo_ratio_tax(&self) -> f64 {
+        if self.attrs.max_combo == 0 {
             return 1.0;
         }
-
-        // CC V3: RX and AP use their own standalone miss systems now
-        // (see rx_miss.rs and ap_miss.rs applied in calculate()). Skip
-        // the exponential pathway entirely for them — returning 1.0
-        // here means the CC V3 scale block becomes an identity for
-        // those mods and the real work happens in the standalone
-        // modules.
-        if self.mods.rx() || self.mods.ap() {
-            return 1.0;
-        }
-
-        let map_max_combo = self.attrs.max_combo;
-        let mut p = 0.998;
-
-        if self.mods.dt() && self.mods.hr() {
-            p += 0.0025;
-        }
-        if self.mods.dt() && self.mods.ez() {
-            p += 0.0028;
-        }
-        if map_max_combo <= 500 && self.mods.dt() {
-            p -= 0.02;
-        }
-        if map_max_combo <= 500 && self.mods.dt() && self.mods.hr() {
-            p -= 0.01;
-        }
-
-        // Each miss becomes progressively more punishing.
-        // V1.1 uses exponent 1.5 as the base; 2+ misses ramps to 1.7 for
-        // harsher scaling when the player starts actually dropping notes.
-        let miss_exp = if misses >= 14.0 {
-            2.4
-        } else if misses >= 6.0 {
-            2.3
-        } else if misses >= 4.0 {
-            2.1
-        } else if misses >= 2.0 {
-            1.7
-        } else {
-            1.5
-        };
-
-        // Less harsh for longer maps
-        let mara_miss_exp = if misses >= 16.0 {
-            2.3
-        } else if misses >= 6.0 {
-            2.1
-        } else if misses >= 4.0 {
-            1.9
-        } else {
-            1.5
-        };
-
-        let miss_weight = if map_max_combo >= 2000 {
-            misses.powf(mara_miss_exp)
-        } else {
-            misses.powf(miss_exp)
-        };
-
-        // * MISS WEIGHTING
-        p.powf(miss_weight)
+        let ratio = (self.state.max_combo as f64 / self.attrs.max_combo as f64)
+            .clamp(0.0, 1.0);
+        (0.85 + 0.15 * ratio.powf(0.35)).min(1.0)
     }
+
+    /// CC V3 exponential consistency multiplier (non-RX, non-AP).
+    /// RX and AP use their own standalone miss systems and bypass this.
+    ///
+    /// Ported from rosu-based ccv3-pp main to original akat-based core.
+    fn apply_cc_v3_multiplier(&self, effective_miss_count: f64) -> f64 {
+        if effective_miss_count <= 0.0 && self.state.n50 == 0 {
+            return 1.0;
+        }
+
+    // RX, AP, and NF use standalone systems.
+    if self.mods.rx() || self.mods.ap() || self.mods.nf() {
+        return 1.0;
+    }
+
+    let od = self.attrs.od;
+    let ar = self.attrs.ar;
+    let map_max_combo = self.attrs.max_combo;
+    let n50 = self.state.n50;
+    let is_ez = self.mods.ez();
+    let is_nf = self.mods.nf();
+
+    // ── n50 effective miss inflation ─────────────────────────────
+    let n50_eff_misses = if (is_ez || is_nf) || n50 == 0 {
+        0.0
+    } else {
+        // Determine how many 50s are "guaranteed" misses (at least 1)
+        let guaranteed_threshold = if od <= 3.0 && ar >= 9.0 {
+            3.0
+        } else if od <= 7.0 && ar >= 9.0 {
+            2.0
+        } else {
+            1.0
+        };
+
+        let n50_f = n50 as f64;
+        let guaranteed_count = n50_f.min(guaranteed_threshold);
+        let remaining_n50 = (n50_f - guaranteed_count).max(0.0);
+        
+        let od_factor = if od <= 1.0 {
+            1.0
+        } else {
+            ((10.0 - od) / 9.0).powf(3.0).clamp(0.0, 1.0)
+        };
+
+        let ar_factor = if ar >= 9.0 {
+            1.0
+        } else if ar >= 7.0 {
+            (ar - 7.0) / 2.0
+        } else {
+            0.0
+        };
+
+        let combo_factor = if map_max_combo >= 1300 {
+            (1.0 - (map_max_combo as f64 - 1300.0) / 8700.0).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        
+        guaranteed_count + (remaining_n50 * od_factor * ar_factor * combo_factor)
+    };
+
+    let misses = effective_miss_count + n50_eff_misses;
+
+    if misses <= 0.0 {
+        return 1.0;
+    }
+
+    // ── Continuous Dynamic Miss System ────────────────────────────
+    let mut p = 0.998;
+
+    if self.mods.dt() && self.mods.hr() { p += 0.0025; }
+    if self.mods.dt() && self.mods.ez() { p += 0.0028; }
+    if map_max_combo <= 500 && self.mods.dt() { p -= 0.02; }
+    if map_max_combo <= 500 && self.mods.dt() && self.mods.hr() { p -= 0.01; }
+
+    // Reworked exponential miss decay (Continuous/Dynamic)
+    // Replaces stepped tiers with a smooth curve: 1.5 + 0.9 * (1 - e^(-misses/8))
+    let base_exp = 1.5 + 0.9 * (1.0 - (-misses / 8.0).exp());
+
+    // Marathon softening: longer maps get a gentler exponent
+    let combo_f = map_max_combo as f64;
+    let combo_softening = 1.0 - 0.15 * ((combo_f - 1000.0) / 4000.0).clamp(0.0, 1.0);
+
+    let miss_exp = base_exp * combo_softening;
+    let miss_weight = misses.powf(miss_exp);
+
+    let mut result = p.powf(miss_weight);
+
+    // Accuracy calibration relief: high acc on long maps
+    let acc = self.state.accuracy(); // Ensure accuracy() helper exists in akat-state
+    let acc_relief = 0.08 
+        * ((acc - 0.95) / 0.05).clamp(0.0, 1.0) 
+        * (combo_f / 2000.0).clamp(0.0, 1.0);
+
+    result += acc_relief;
+
+    result.min(1.0)
+}
+
 
     fn compute_aim_value(&self) -> f64 {
         if self.mods.ap() {

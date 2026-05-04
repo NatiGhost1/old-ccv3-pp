@@ -140,6 +140,9 @@ impl<'a> Skill<'a, Aim> {
     }
 }
 
+// TODO: Port all reworks and logic changes from the rosu-based 
+// ccv3-pp to the akat-based version, ensuring the sin^2 system 
+// is preserved over smoothstep/smootherstep.
 struct AimEvaluator;
 
 impl AimEvaluator {

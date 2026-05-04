@@ -1,32 +1,8 @@
 // Relax-specific aim evaluator for Combo Consistency V3.
 //
-// This is a sibling to AimEvaluator in aim.rs. When the Aim skill is
-// constructed with has_relax=true, strain_value_at dispatches here instead
-// of the vanilla evaluator. Same input signature, same output meaning
-// (an aim strain contribution), but with different scoring rules:
-//
-//   1. Enhanced aim-control reward: wide/acute/velocity-change bonuses
-//      get a +8% uplift because RX players specifically train aim
-//      control (no tap timing noise to hide imprecision).
-//
-//   2. Harsher aim-slop nerf: if recent pattern has very low angle
-//      variance AND low velocity change, nerf it — this is repetitive
-//      cursor-dragging that RX trivializes.
-//
-//   3. Slow-slider-velocity nerf: slider_bonus tapers hard below a
-//      velocity floor, since slow sliders are essentially free movement
-//      on RX (no aim precision needed to follow).
-//
-//   4. Cross-screen same-distance nerf: patterns where curr_dist is
-//      close to prev_dist AND neither is truly edge-to-edge get an
-//      extra nerf. This catches "big jumps that are really just
-//      constant-distance spam". Exempt above 350 BPM 1/2 effective
-//      (these patterns are genuinely hard at that speed).
-//
-//   5. Repetition buff at high BPM: preserved from vanilla evaluator.
-//      410-500 BPM effective (1/2) fades out the repetition penalty
-//      and replaces it with a small buff, since mechanically holding
-//      repetitive aim at that speed is genuinely hard.
+// TODO: Port all reworks and logic changes from the rosu-based 
+// ccv3-pp to the akat-based version, ensuring the sin^2 system 
+// is preserved over smoothstep/smootherstep.
 
 use std::f64::consts::{FRAC_PI_2, PI};
 
