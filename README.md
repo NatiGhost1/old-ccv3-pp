@@ -1,4 +1,4 @@
-# ComboConsistencyV3 (Legacy / Akatsuki-Base)
+# Combo Consistency V3 (Legacy / Akatsuki-Base)
 
 Formerly the main repository for the **Combo Consistency V3** project. Development of the primary performance model has moved to the `rosu-pp` ecosystem, but this repository serves as the definitive version for the **original Akatsuki-based core**.
 
