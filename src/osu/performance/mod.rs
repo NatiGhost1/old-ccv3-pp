@@ -705,7 +705,9 @@ impl<'map> OsuPerformance<'map> {
                 // * Combine regular misses with tick misses since tick misses break combo as well
                 effective_miss_count = effective_miss_count
                     .min(f64::from(n_large_tick_miss(&attrs, &state) + state.misses));
-            } else if attrs.n_sliders > 0 {
+            }
+
+            if attrs.n_sliders > 0 {
                 if !using_classic_slider_acc {
                     effective_miss_count += f64::from(n_large_tick_miss(&attrs, &state));
                 }
@@ -737,6 +739,8 @@ impl<'map> OsuPerformance<'map> {
             state,
             effective_miss_count,
             using_classic_slider_acc,
+            disable_combo_scaling: false,
+            combo_consistency_v3_p: None,
         };
 
         Ok(inner.calculate())
@@ -937,7 +941,7 @@ impl OsuPerformanceInner<'_> {
 
         if let Some(p) = self.combo_consistency_v3_p {
             let tax = combo_ratio_tax(self.state.max_combo, self.attrs.max_combo);
-            let s = self.apply_cc_v3_multiplier();
+            let s = self.apply_cc_v3_multiplier(self.effective_miss_count);
             let scale = tax * s;
 
             pp *= scale;
@@ -992,6 +996,11 @@ impl OsuPerformanceInner<'_> {
         if self.mods.ap() {
             let ap_mult = ap_miss::ap_miss_multiplier(
                 self.attrs.od,
+                self.attrs.dominant_tap_bpm,
+                &self.attrs.rx_chunk_hardness,
+                &self.attrs.rx_chunk_avg_delta,
+                self.state.n300,
+                self.state.n100,
                 self.state.n50,
                 self.state.misses,
                 self.state.max_combo,
@@ -1019,7 +1028,9 @@ impl OsuPerformanceInner<'_> {
         // branch in apply_cc_v3_multiplier has been removed.
         if self.mods.rx() && self.state.misses > 0 {
             let rx_mult = rx_miss::rx_miss_multiplier(
-                &self.attrs.rx_hardness_per_4notes,
+                &self.attrs.rx_chunk_hardness,
+                &self.attrs.rx_chunk_avg_delta,
+                self.attrs.median_delta_time,
                 self.state.n300,
                 self.state.n100,
                 self.state.n50,
@@ -1131,7 +1142,7 @@ impl OsuPerformanceInner<'_> {
     }
 
     // ── Continuous Dynamic Miss System ────────────────────────────
-    let mut p = 0.998;
+    let mut p: f64 = 0.998;
 
     if self.mods.dt() && self.mods.hr() { p += 0.0025; }
     if self.mods.dt() && self.mods.ez() { p += 0.0028; }
@@ -1152,7 +1163,7 @@ impl OsuPerformanceInner<'_> {
     let mut result = p.powf(miss_weight);
 
     // Accuracy calibration relief: high acc on long maps
-    let acc = self.state.accuracy(); // Ensure accuracy() helper exists in akat-state
+    let acc = self.state.accuracy(OsuScoreOrigin::Stable);
     let acc_relief = 0.08 
         * ((acc - 0.95) / 0.05).clamp(0.0, 1.0) 
         * (combo_f / 2000.0).clamp(0.0, 1.0);
@@ -1185,7 +1196,7 @@ impl OsuPerformanceInner<'_> {
             );
         } else if self.mods.fl() && self.mods.dt() && self.mods.hd() && self.mods.hr() {
             aim_value *= Self::calculate_miss_penalty(
-                self.misses,
+                f64::from(self.state.misses),
                 self.attrs.aim_difficult_strain_count,
             );
         }

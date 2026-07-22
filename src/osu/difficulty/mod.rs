@@ -23,7 +23,7 @@ use self::skills::OsuSkills;
 use super::attributes::OsuDifficultyAttributes;
 
 pub mod gradual;
-mod object;
+pub mod object;
 pub mod scaling_factor;
 pub mod skills;
 pub mod tap_bpm;
@@ -170,7 +170,7 @@ pub fn difficulty(
         if chunk_count > 0 {
             hardness_chunks.push(chunk_sum);
         }
-        attrs.rx_hardness_per_4notes = hardness_chunks;
+        attrs.rx_chunk_hardness = hardness_chunks;
     }
 
     Ok(attrs)

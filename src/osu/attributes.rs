@@ -54,6 +54,8 @@ pub struct OsuDifficultyAttributes {
     /// decay in performance/mod.rs to detect long stretches of similar
     /// difficulty. Empty on maps under ~1 minute.
     pub local_sr_per_minute: Vec<f64>,
+    /// Per-minute local star rating for Autopilot-specific marathon decay.
+    pub ap_local_sr_per_minute: Vec<f64>,
     pub avg_jump_dist: f64,
     pub median_delta_time: f64,
     /// CC V3 (RX/AP): hardness proxy per 4-note chunk. Each value is
