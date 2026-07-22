@@ -305,21 +305,21 @@ impl DifficultyValues {
         }
 
         if mods.rx() {
-            aim_rating = 1.0;
+            aim_rating *= 1.0;
             speed_rating = 0.0;
             flashlight_rating *= 0.7; 
         }
 
         if mods.ap() {
             aim_rating = 0.0;
-            speed_rating = 1.0;
+            speed_rating *= 1.0;
             flashlight_rating *= 0.55; 
         }
 
         // Buffs 4 mod (Not EZ)
         if mods.ap() && mods.dt() && mods.hd() && mods.hr() && mods.fl() && !mods.ez() {
             aim_rating = 0.0;
-            speed_rating = 1.0;
+            speed_rating *= 1.0;
             flashlight_rating *= 0.72;
         }
 
